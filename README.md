@@ -12,7 +12,7 @@ A server-side application of the NCryptoChat. This project is created with a pur
 * Install distributions which are stored in PyPi: `pip install NCryptoServer`. NCryptoTools, which is required to run the NCryptoServer, will be installed automatically.
 * If installation is successfull, it will be possible to run application in a two modes:
   * Console mode (all errors and warnings will be showed): `NCryptoServer_console`.
-  * GUI mode (all errors and warnings will be hidden): `NCryptoClient_gui`.  
+  * GUI mode (all errors and warnings will be hidden): `NCryptoServer_gui`.  
 
 **Using this repository:**
 * Install NCryptoTools from PyPi: `pip install NCryptoTools`.
