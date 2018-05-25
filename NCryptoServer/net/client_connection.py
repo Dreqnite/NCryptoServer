@@ -5,14 +5,14 @@
 import time
 from threading import Thread
 
-from NCryptoTools.Tools.utilities import get_current_time
-from NCryptoTools.JIM.jim import JIMManager
-from NCryptoTools.JIM.jim_base import JSONObjectType, UnknownJSONObjectType
+from NCryptoTools.tools.utilities import get_current_time
+from NCryptoTools.jim.jim_core import type_of, JIMMessage
+from NCryptoTools.jim.jim_constants import JIMMsgType, HTTPCode
 
 from NCryptoServer.server_instance_holder import *
-from NCryptoServer.Transmitter.server_sender import Sender
-from NCryptoServer.Transmitter.server_receiver import Receiver
-from NCryptoServer.Database.server_storage import SQLErrorNotFound, SQLIntegrityError
+from NCryptoServer.net.server_sender import Sender
+from NCryptoServer.net.server_receiver import Receiver
+from NCryptoServer.database.server_storage import SQLErrorNotFound, SQLIntegrityError
 
 
 class ClientHandler(Thread):
@@ -68,127 +68,98 @@ class ClientHandler(Thread):
 
     def _handle_message(self, msg_dict):
         """
-        Обрабатывает входящие сообщения и выполняет определённые действия в
-        зависимости от того, к какому типу сообщение относится.
-        @param msg_dict: JSON-объект (сообщение).
-        @return: -
+        Defines message type and handles it according to the type.
+        @param msg_dict: JSON message (dictionary).
+        @return: None.
         """
-        try:
-            json_object_type = JIMManager.determine_jim_msg_type(msg_dict)
-        except UnknownJSONObjectType:
+        jim_msg_type = type_of(msg_dict)
+        if jim_msg_type == JIMMsgType.UNDEFINED_TYPE:
             return
+        if jim_msg_type == JIMMsgType.CTS_AUTHENTICATE:
+            self._handle_auth_msg(msg_dict)
 
-        # Пользователь пытается пройти авторизацию чата
-        if json_object_type == JSONObjectType.TO_SERVER_AUTH:
-            self._client_to_server_authenticate(msg_dict)
+        elif jim_msg_type == JIMMsgType.CTS_QUIT:
+            self._handle_quit_msg(msg_dict)
 
-        # Пользователь решил покинуть чат-приложение (закрыть соединение)
-        elif json_object_type == JSONObjectType.TO_SERVER_QUIT:
-            self._client_to_server_quit(msg_dict)
+        elif jim_msg_type == JIMMsgType.CTS_PRESENCE:
+            pass
 
-        # Пользователь пришёл онлайн
-        elif json_object_type == JSONObjectType.TO_SERVER_PRESENCE:
-            self._client_to_server_presence(msg_dict)
+        elif jim_msg_type == JIMMsgType.CTS_PERSONAL_MSG:
+            self._handle_personal_msg(msg_dict)
 
-        # Пользователь пишет другому клиенту в личные сообщения, а не в чат
-        elif json_object_type == JSONObjectType.TO_SERVER_PERSONAL_MSG:
-            self._client_to_server_personal_msg(msg_dict)
+        elif jim_msg_type == JIMMsgType.CTS_CHAT_MSG:
+            self._handle_chat_msg(msg_dict)
 
-        # Пользователь пишет в чат-комнату
-        elif json_object_type == JSONObjectType.TO_SERVER_CHAT_MSG:
-            self._client_to_server_chat_msg(msg_dict)
+        elif jim_msg_type == JIMMsgType.CTS_JOIN_CHAT:
+            self._handle_join_chat_msg(msg_dict)
 
-        # Пользователь пытается присоедениться к чат-комнате
-        elif json_object_type == JSONObjectType.TO_SERVER_JOIN_CHAT:
-            self._client_to_server_join_chat(msg_dict)
+        elif jim_msg_type == JIMMsgType.CTS_LEAVE_CHAT:
+            self._handle_leave_chat_msg(msg_dict)
 
-        # Пользователь пытается покинуть чат-комнату
-        elif json_object_type == JSONObjectType.TO_SERVER_LEAVE_CHAT:
-            self._client_to_server_leave_chat(msg_dict)
+        elif jim_msg_type == JIMMsgType.CTS_GET_CONTACTS:
+            self._handle_get_contacts_msg(msg_dict)
 
-        # Пользователь пытается получить список его контактов
-        elif json_object_type == JSONObjectType.TO_SERVER_GET_CONTACTS:
-            self._client_to_server_get_contacts(msg_dict)
+        elif jim_msg_type == JIMMsgType.CTS_ADD_CONTACT:
+            self._handle_add_contact_msg(msg_dict)
 
-        # Пользователь пытается добавить нового пользователя в список контактов
-        elif json_object_type == JSONObjectType.TO_SERVER_ADD_CONTACT:
-            self._client_to_server_add_contact(msg_dict)
-
-        # Пользователь пытается удалить пользователя из списка контактов
-        elif json_object_type == JSONObjectType.TO_SERVER_DEL_CONTACT:
-            self._client_to_server_del_contact(msg_dict)
-
-        elif json_object_type == JSONObjectType.TO_SERVER_GET_MSGS:
-            self._client_to_server_get_msgs(msg_dict)
+        elif jim_msg_type == JIMMsgType.CTS_DEL_CONTACT:
+            self._handle_del_contact_msg(msg_dict)
 
     def _send_broadcast(self, recipients_logins, msg_dict):
         """
         Оправляет сообщение списку клиентов.
         @param recipients_logins: список логинов получателей.
-        @param msg_dict: JSON-объект (сообщение).
-        @return: -
+        @param msg_dict: JSON message (dictionary).
+        @return: None.
         """
         for login in recipients_logins:
             self._sender.add_msg_to_queue(login, msg_dict)
 
-    # ========================================================================
-    # Группа приватных методов, кажый из которых отвечает за обработку сооб-
-    # щений определённого типа.
-    # ========================================================================
-    def _client_to_server_authenticate(self, msg_dict):
+    ###########################################################################
+    # A group of methods to handle each of defined types of messages
+    ###########################################################################
+    def _handle_auth_msg(self, msg_dict):
         """
-        Осуществляет авторизацию пользователя, проверяя его запись в БД.
-        @param msg_dict: JSON-объект (сообщение). Структура:
-        {'action': self._action,
-         'time': self._time,
-         'user': {'login': self._login,
-                  'password': self._password
-                  }
-        }
-        @return: -
+        Authenticates client by checking hist account in the database.
+        @param msg_dict: JSON message (dictionary).
+        @return: None.
         """
         client_login = msg_dict['user']['login']
         client_password = msg_dict['user']['password']
 
         authentication_success = self._db_connection.authenticate_client(client_login, client_password)
-
-        # Если аутентификация прошла успешно, то отсылаем соответствующее сообщение-ответ
         if authentication_success is True:
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_INFO,
-                                                        200, 'Authentication is successful!')
+            response_msg = JIMMessage(JIMMsgType.STC_ALERT,
+                                      response=HTTPCode.OK,
+                                      alert='Authentication is successful!')
 
-            # Добавление сообщения в Log
             self._main_window.add_data_in_tab('Log', '[{}] Client ({}) has logged in as {}.'.
-                                              format(get_current_time(),
-                                                     self._client_info.get_ip(),
+                                              format(get_current_time(), self._client_info.get_ip(),
                                                      client_login))
 
-            # Добавление клиента в список клиентов на вкладку Clients
             self._main_window.add_data_in_tab('Clients', '{} ({})'.format(client_login,
                                                                           self._client_info.get_ip()))
             self._client_info.set_login(client_login)
-
-        # В ином случае оповещаем пользователя об ошибке аутентификации
         else:
-            # if user failed authentication, we take reserved login ('Anonymous####')
+            # if user fails authentication, a reserved login is being taken (Anonymous####)
             client_login = self._client_info.get_login()
 
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR,
-                                                        401, 'Authentication has failed!')
+            response_msg = JIMMessage(JIMMsgType.STC_ERROR,
+                                      response=HTTPCode.UNAUTHORIZED,
+                                      error='Authentication has failed!')
+
             self._main_window.add_data_in_tab('Log', '[{}] Client {} has failed authentication.'.
-                                              format(get_current_time(),
-                                                     self._client_info.get_ip()))
+                                              format(get_current_time(), self._client_info.get_ip()))
 
         self._sender.add_msg_to_queue(client_login, response_msg.to_dict())
 
-    def _client_to_server_quit(self, msg_dict):
+    def _handle_quit_msg(self, msg_dict):
         """
         Вызов данного метода подразумевает, что пользователь решил отсоедениться от чата,
         например, закрыв программу. В таком случае необходимо оповестить всех пользователей,
         что данный клиент ушёл в оффлайн.
-        @param msg_dict: JSON-объект (сообщение). Структура:
-        {'action': self._action}
-        @return: -
+        @param msg_dict: JSON message (dictionary).
+        @return: None.
         """
         self._client_info.set_quit_safety(True)
 
@@ -215,104 +186,75 @@ class ClientHandler(Thread):
         # Удаление сокета из списка (поиск клиента по логину)
         server_holder.get_instance('ClientManager').delete_client('login', client_login)
 
-    def _client_to_server_presence(self, msg_dict):
-        """
-        Данный тип сообщений относится только к авторизированным пользователям.
-        Клиент оповещает сервер о своём присутствии.
-        мессенджер может отправлять prob-запросы клиенту через определённый интервал
-        времени, чтобы убедиться, что тот всё ещё online. Клиент в таком случае отве-
-        чает presence-сообщением.
-        Note: сообщение данного типа может использоватеься только авторизованными
-        пользователями.
-        @param msg_dict: JSON-объект (сообщение). Структура:
-        {'action': self._action,
-         'time': self._time,
-         'type': self._type,
-         'user': {'login': self._login,
-                  'status': self._status
-                  }
-        }
-        @return: -
-        """
-        pass
-
-    def _client_to_server_personal_msg(self, msg_dict):
+    def _handle_personal_msg(self, msg_dict):
         """
         Сообщение, которое отправляется другому пользователю в личную переписку.
         Note: сообщение данного типа может использоватеься только авторизованными
         пользователями.
-        @param msg_dict: JSON-объект (сообщение). Структура:
-        {'action': self._action,
-         'time': self._time,
-         'to': self._login_to,
-         'from': self._login_from,
-         'encoding': self._encoding,
-         'message': self._message}
-        @return: -
+        @param msg_dict: JSON message (dictionary).
+        @return: None.
         """
-        recipinet_login = msg_dict['to']
+        recipient_login = msg_dict['to']
 
-        # Сообщение должно содержать хотя бы один символ
+        # Message should not be empty
         error_msg = None
         if len(msg_dict['message']) == 0:
-            error_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR, 400, 'Message is empty!')
+            error_msg = JIMMessage(JIMMsgType.STC_ERROR,
+                                   reponse=HTTPCode.BAD_REQUEST,
+                                   error='Message is empty!')
 
-        # Получатель должен быть в БД
-        if self._db_connection.client_exists(recipinet_login) is False:
-            error_msg = \
-                JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR,
-                                             404, 'Client \'{}\' does not exists!'.format(recipinet_login))
-        # Получатель должен быть онлайн
+        # Recipient should be in the database
+        elif self._db_connection.client_exists(recipient_login) is False:
+            error_msg = JIMMessage(JIMMsgType.STC_ERROR,
+                                   response=HTTPCode.NOT_FOUND,
+                                   error='Client \'{}\' have not been found in the database!'.format(recipient_login))
+
+        # Recipient should be online
         if self._main_window.data_in_tab_exists(
-                'Clients', '{} ({})'.format(recipinet_login, self._client_info.get_ip())) is not True:
-            error_msg = \
-                JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR,
-                                             404, 'Client \'{}\' is not Online!'.format(recipinet_login))
+                'Clients', '{} ({})'.format(recipient_login, self._client_info.get_ip())) is not True:
+            error_msg = JIMMessage(JIMMsgType.STC_ERROR,
+                                   response=HTTPCode.NOT_FOUND,
+                                   error='Client \'{}\' is not Online!'.format(recipient_login))
 
         if error_msg is None:
-            # Отправляем сообщение получателю
-            self._sender.add_msg_to_queue(recipinet_login, msg_dict)
+            # Message for recipient
+            self._sender.add_msg_to_queue(recipient_login, msg_dict)
 
-            # Отправляем ответ отправителю, что сообщение доставлено
-            response_msg = JIMManager.create_jim_object(
-                JSONObjectType.TO_CLIENT_INFO, 200, 'Message to \'{}\' has been delivered!'.format(recipinet_login))
-            self._sender.add_msg_to_queue(msg_dict['from'], response_msg.to_dict())
-
-        # В случае ошибки отправляем сообщение отправителю
+            # A reply for sender that everything is OK
+            alert_msg = JIMMessage(JIMMsgType.STC_ALERT,
+                                   response=HTTPCode.OK,
+                                   alert='Message to \'{}\' has been delivered!'.format(recipient_login))
+            self._sender.add_msg_to_queue(msg_dict['from'], alert_msg.to_dict())
         else:
             self._sender.add_msg_to_queue(msg_dict['from'], error_msg.to_dict())
 
-    def _client_to_server_chat_msg(self, msg_dict):
+    def _handle_chat_msg(self, msg_dict):
         """
         Осуществляет пересылку сообщения в чат-комнату.
         Note: сообщение данного типа может использоватеься только авторизованными
         пользователями.
-        @param msg_dict: JSON-объект (сообщение). Структура:
-        {'action': self._action,
-         'time': self._time,
-         'to': self._login_to,
-         'from': self._login_from,
-         'message': self._message}
-        @return: -
+        @param msg_dict: JSON message (dictionary).
+        @return: None.
         """
-        error_msg = None
         chatroom_name = msg_dict['to']
 
-        # Сообщение должно содержать хотя бы один символ
+        # Message should not be empty
+        error_msg = None
         if len(msg_dict['message']) == 0:
-            error_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR, 400, 'Message is empty!')
+            error_msg = JIMMessage(JIMMsgType.STC_ERROR,
+                                   reponse=HTTPCode.BAD_REQUEST,
+                                   error='Message is empty!')
 
-        # Чат-комната должна быть в БД
-        if self._db_connection.chatroom_exists(chatroom_name) is False:
-            error_msg = \
-                JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR,
-                                             404, 'Chatroom \'{}\' does not exists!'.format(chatroom_name))
+        # Chatroom should be in the database
+        elif self._db_connection.chatroom_exists(chatroom_name) is False:
+            error_msg = JIMMessage(JIMMsgType.STC_ERROR,
+                                   reponse=HTTPCode.NOT_FOUND,
+                                   error='Chatroom \'{}\' does not exists!'.format(chatroom_name))
 
         # Получение логинов пользователей, которые являются участиками чат-комнаты
         chatroom_participants = self._db_connection.get_chatroom_clients(chatroom_name)
         if not chatroom_participants:
-            error_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR,
-                                                     404, 'Chatroom is empty!')
+            error_msg = JIMMessage(JIMMsgType.STC_ERROR, HTTPCode.NOT_FOUND, 'Chatroom is empty!')
 
         if error_msg is None:
             # Отправляем сообщение в чат-комнату (всем её участникам, кроме отправителя)
@@ -320,23 +262,19 @@ class ClientHandler(Thread):
             self._send_broadcast(chatroom_participants, msg_dict)
 
             # Отправляем ответ отправителю, что сообщение доставлено
-            response_msg = JIMManager.create_jim_object(
-                JSONObjectType.TO_CLIENT_INFO, 200, 'Message to \'{}\' has been delivered!'.format(chatroom_name))
+            response_msg = JIMMessage(JIMMsgType.STC_ALERT, HTTPCode.OK,
+                                      'Message to \'{}\' has been delivered!'.format(chatroom_name))
             self._sender.add_msg_to_queue(msg_dict['from'], response_msg.to_dict())
 
         # В случае ошибки отправляем сообщение отправителю
         else:
             self._sender.add_msg_to_queue(msg_dict['from'], error_msg.to_dict())
 
-    def _client_to_server_join_chat(self, msg_dict):
+    def _handle_join_chat_msg(self, msg_dict):
         """
         Осуществляет присоединение клиента к списку участников чат-комнаты.
-        @param msg_dict: JSON-объект (сообщение). Структура:
-        {'action': self._action,
-         'time': self._time,
-         'login': self._login,
-         'room': self._room}
-        @return: -
+        @param msg_dict: JSON message (dictionary).
+        @return: None.
         """
         chatroom_name = msg_dict['room']
         client_login = self._client_info.get_login()
@@ -345,16 +283,14 @@ class ClientHandler(Thread):
         try:
             if self._db_connection.add_client_to_chatroom(client_login, chatroom_name) is False:
                 raise SQLIntegrityError('{}, {}'.format(client_login, chatroom_name))
-
         except SQLErrorNotFound as e:
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR, 404, str(e))
-
+            response_msg = JIMMessage(JIMMsgType.STC_ERROR, response=HTTPCode.NOT_FOUND, error=str(e))
         except SQLIntegrityError as e:
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR, 403, str(e))
-
+            response_msg = JIMMessage(JIMMsgType.STC_ERROR, response=HTTPCode.INTERNAL_SERVER_ERROR, error=str(e))
         else:
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_INFO, 200,
-                                                        'You have joined \'{}\' chatroom!'.format(chatroom_name))
+            response_msg = JIMMessage(JIMMsgType.STC_ALERT,
+                                      response=HTTPCode.OK,
+                                      alert='You have joined \'{}\' chatroom!'.format(chatroom_name))
 
             # Оповещение участников чат-комнаты о данном событии
             chatroom_participants = self._db_connection.get_chatroom_clients(chatroom_name)
@@ -367,15 +303,11 @@ class ClientHandler(Thread):
         finally:
             self._sender.add_msg_to_queue(client_login, response_msg.to_dict())
 
-    def _client_to_server_leave_chat(self, msg_dict):
+    def _handle_leave_chat_msg(self, msg_dict):
         """
         Осуществляет удаление клиента из списка участников чат-комнаты.
-        @param msg_dict: JSON-объект (сообщение). Структура:
-        {'action': self._action,
-         'time': self._time,
-         'login': self._login,
-         'room': self._room}
-        @return: -
+        @param msg_dict: JSON message (dictionary).
+        @return: None.
         """
         chatroom_name = msg_dict['room']
         client_login = self._client_info.get_login()
@@ -384,16 +316,14 @@ class ClientHandler(Thread):
         try:
             if self._db_connection.del_client_from_chatroom(client_login, chatroom_name) is False:
                 raise SQLIntegrityError('{}, {}'.format(client_login, chatroom_name))
-
         except SQLErrorNotFound as e:
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR, 404, str(e))
-
+            response_msg = JIMMessage(JIMMsgType.STC_ERROR, response=HTTPCode.NOT_FOUND, error=str(e))
         except SQLIntegrityError as e:
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR, 403, str(e))
-
+            response_msg = JIMMessage(JIMMsgType.STC_ERROR, response=HTTPCode.INTERNAL_SERVER_ERROR, error=str(e))
         else:
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_INFO, 200,
-                                                        'You have left \'{}\' chatroom!'.format(chatroom_name))
+            response_msg = JIMMessage(JIMMsgType.STC_ALERT,
+                                      response=HTTPCode.OK,
+                                      error='You have left \'{}\' chatroom!'.format(chatroom_name))
 
             # Оповещение участников чат-комнаты о данном событии
             chatroom_participants = self._db_connection.get_chatroom_clients(chatroom_name)
@@ -406,14 +336,11 @@ class ClientHandler(Thread):
         finally:
             self._sender.add_msg_to_queue(client_login, response_msg.to_dict())
 
-    def _client_to_server_get_contacts(self, msg_dict):
+    def _handle_get_contacts_msg(self):
         """
         Осуществляет пересылку клиенту информации о количестве имеющихся у него
         контактов и логинах каждого из контактов.
-        @param msg_dict: JSON-объект (сообщение). Структура:
-        {'action': self._action,
-         'time': self._time}
-        @return: -
+        @return: None.
         """
         client_login = self._client_info.get_login()
 
@@ -429,13 +356,15 @@ class ClientHandler(Thread):
         # Если у пользователя имеются контакты, то продолжаем
         if client_contacts:
             # Отправляется сообщение с количеством контактов
-            msgs_to_send = [JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_QUANTITY,
-                                                         202, len(client_contacts))]
+            msgs_to_send = [JIMMessage(JIMMsgType.STC_QUANTITY,
+                                       response=HTTPCode.ACCEPTED,
+                                       quantity=len(client_contacts))]
 
             # Отправляется набор сообщений с логинами контактов
             for login in client_contacts:
-                contact_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_CONTACT_LIST, login)
-                msgs_to_send.append(contact_msg)
+                msgs_to_send.append(JIMMessage(JIMMsgType.STC_CONTACTS_LIST,
+                                               action='contacts_list',
+                                               login=login))
 
             for msg_to_send in msgs_to_send:
                 self._sender.add_msg_to_queue(client_login, msg_to_send.to_dict())
@@ -444,99 +373,64 @@ class ClientHandler(Thread):
                 # передаётся только первый контакт, а все остальные сериализуются неверноб
                 # что приводит к ошибке на стороне клиента
                 time.sleep(0.1)
-
-        # Если контакты отсутствуют, то оповещаем пользователя об этом
         else:
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR,
-                                                        404, 'No contacts were found!')
+            response_msg = JIMMessage(JIMMsgType.STC_ERROR,
+                                      response=HTTPCode.NOT_FOUND,
+                                      error='No contacts were found!')
             self._sender.add_msg_to_queue(client_login, response_msg.to_dict())
 
-    def _client_to_server_add_contact(self, msg_dict):
+    def _handle_add_contact_msg(self, msg_dict):
         """
         Осуществляет добавление контакта к пользователю в список контактов.
-        @param msg_dict: JSON-объект (сообщение). Структура:
-        {'action': self._action,
-         'time': self._time,
-         'login': self._login}
-        @return: -
+        @param msg_dict: JSON message (dictionary).
+        @return: None.
         """
         contact_login = msg_dict['login']
         client_login = self._client_info.get_login()
-
-        # Добавление контакта
         response_msg = None
+
         try:
             if self._db_connection.add_contact(client_login, contact_login) is False:
                 raise SQLIntegrityError('{}, {}'.format(client_login, contact_login))
-
-        # Если контакт не найден
         except SQLErrorNotFound as e:
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR, 404, str(e))
-
+            response_msg = JIMMessage(JIMMsgType.STC_ERROR, response=HTTPCode.NOT_FOUND, error=str(e))
         except SQLIntegrityError as e:
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR, 403, str(e))
-
-        # В случае успешного добавления контакта
+            response_msg = JIMMessage(JIMMsgType.STC_ERROR, response=HTTPCode.INTERNAL_SERVER_ERROR, error=str(e))
         else:
-            # Добавление сообщения в Log об успешном добавлении нового контакта пользователем
             self._main_window.add_data_in_tab(
                 'Log', '[{}] Client {} ({}) has added client {} to his contacts.'.
                 format(get_current_time(), client_login, self._client_info.get_ip(), contact_login))
 
-            response_msg = JIMManager.create_jim_object(
-                JSONObjectType.TO_CLIENT_INFO, 200, 'Contact \'{}\' has been successfully added!'.format(contact_login))
-
-        # В любом случае необходимо ответить клиенту каким-либо сообщением
+            response_msg = JIMMessage(JIMMsgType.STC_ALERT,
+                                      response=HTTPCode.OK,
+                                      alert='Contact \'{}\' has been successfully added!'.format(contact_login))
         finally:
             self._sender.add_msg_to_queue(client_login, response_msg.to_dict())
 
-    def _client_to_server_del_contact(self, msg_dict):
+    def _handle_del_contact_msg(self, msg_dict):
         """
         Осуществляет удаление контакта у пользователя из списка контактов.
-        @param msg_dict: JSON-объект (сообщение). Структура:
-        {'action': self._action,
-         'time': self._time,
-         'login': self._login}
-        @return: -
+        @param msg_dict: JSON message (dictionary).
+        @return: None.
         """
         contact_login = msg_dict['login']
         client_login = self._client_info.get_login()
-
-        # Добавление контакта
         response_msg = None
+
         try:
             if self._db_connection.del_contact(client_login, contact_login) is False:
                 raise SQLIntegrityError('{}, {}'.format(client_login, contact_login))
-
-        # Если контакт не найден
         except SQLErrorNotFound as e:
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR, 404, str(e))
-
+            response_msg = JIMMessage(JIMMsgType.STC_ERROR, response=HTTPCode.NOT_FOUND, error=str(e))
         except SQLIntegrityError as e:
-            response_msg = JIMManager.create_jim_object(JSONObjectType.TO_CLIENT_ERROR, 403, str(e))
-
-        # В случае успешного удаления контакта
+            response_msg = JIMMessage(JIMMsgType.STC_ERROR, response=HTTPCode.INTERNAL_SERVER_ERROR, error=str(e))
         else:
-            # Добавление сообщения в Log об успешном удалении контакта пользователем
             self._main_window.add_data_in_tab(
                 'Log', '[{}] Client {} ({}) has deleted client {} from his contacts.'.
                 format(get_current_time(), client_login, self._client_info.get_ip(), contact_login))
 
-            response_msg = JIMManager.create_jim_object(
-                JSONObjectType.TO_CLIENT_INFO, 200, 'Contact \'{}\' has been successfully removed!'.format(contact_login))
-
-        # В любом случае необходимо ответить клиенту каким-либо сообщением
+            response_msg = JIMMessage(JIMMsgType.STC_ALERT,
+                                      response=HTTPCode.OK,
+                                      alert='Contact \'{}\' has been successfully removed!'.format(contact_login))
         finally:
             self._sender.add_msg_to_queue(client_login, response_msg.to_dict())
-
-    def _client_to_server_get_msgs(self, msg_dict):
-        """
-        Возвращает последнии сообщения, которые сохранены в БД.
-        @param msg_dict: JSON-объект (сообщение). Структура:
-        {'action': self._action,
-         'time': self._time,
-         'chat_name': self._chat_name}
-        @return: -
-        """
-        # TODO:
-        pass

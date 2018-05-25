@@ -7,7 +7,7 @@ import socket
 import datetime
 from threading import Thread
 
-from NCryptoTools.Tools.utilities import get_current_time, get_formatted_date
+from NCryptoTools.tools.utilities import get_formatted_date
 
 from NCryptoServer.server_instance_holder import server_holder
 

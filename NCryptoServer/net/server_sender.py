@@ -6,11 +6,10 @@ import time
 from threading import Thread
 from queue import Queue
 
-from NCryptoTools.Tools.utilities import send_msg
-from NCryptoTools.JIM.jim import JIMManager
-from NCryptoTools.JIM.jim_base import JSONObjectType
-
 from NCryptoServer.server_instance_holder import server_holder
+
+from NCryptoTools.jim.jim_core import JIMMessage
+from NCryptoTools.jim.jim_constants import JIMMsgType
 
 
 class Sender(Thread):
@@ -56,10 +55,7 @@ class Sender(Thread):
                 client = self._client_manager.find_client('login', recipient_login)
                 if client:
                     try:
-                        send_msg(client.get_socket(), msg_dict)
-
-                    # Если пересылка завершилась ошибкой, значит связь с клиентом потеряна.
-                    # Можем констатировать факт, что пользователь отключился от сервера (ping timeout)
+                        self._socket.recv(1024)
                     except OSError:
                         self._handle_sending_failure(client.get_login(), 'Client {} ({}) has timed out.'.
                                                      format(client.get_login(), client.get_ip()))
@@ -84,9 +80,8 @@ class Sender(Thread):
         # Добавление сообщения в лог об уходе пользователя в Offline
         main_window.add_data_in_tab('Log', log_message)
 
-        msg_time_out = JIMManager.create_jim_object(JSONObjectType.TO_SERVER_QUIT)
-        all_contacts = server_holder.get_instance('ServerStorage').\
-            get_overall_client_contacts(recipient_login)
+        msg_time_out = JIMMessage(JIMMsgType.CTS_QUIT, action='quit')
+        all_contacts = server_holder.get_instance('ServerStorage').get_overall_client_contacts(recipient_login)
 
         # Удаление пользователя из списка
         self._client_manager.delete_client(recipient_login)

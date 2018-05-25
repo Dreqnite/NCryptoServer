@@ -4,6 +4,7 @@ Module for NCryptoServer package distribution.
 """
 from setuptools import setup, find_packages
 
+
 setup(
     name='NCryptoServer',
     version='0.5.3',

@@ -6,7 +6,9 @@ import time
 from threading import Thread
 from queue import Queue
 
-from NCryptoTools.Tools.utilities import recv_msg, get_current_time
+from NCryptoTools.jim.jim_constants import JIMMsgType
+from NCryptoTools.jim.jim_core import JIMMessage
+from NCryptoTools.tools.utilities import get_current_time
 
 from NCryptoServer.server_instance_holder import server_holder
 
@@ -47,15 +49,10 @@ class Receiver(Thread):
         """
         while self._client_info.is_connected():
             try:
-                msg_dict = recv_msg(self._socket)
-
-            # Handles the case when client has closed his connection due to an error
+                msg_bytes = self._socket.recv(1024)
             except OSError:
-
-                # If user has exited with a TO_SERVER_QUIT message - he quited safely,
-                # otherwise he interrupted the connection (timed out)
+                # If user has exited with a TO_SERVER_QUIT message - he quited safely
                 if self._client_info.is_safe_quit() is False:
-
                     login = self._client_info.get_login()
                     ip = self._client_info.get_ip()
 
@@ -72,6 +69,7 @@ class Receiver(Thread):
                     # Triggers threads to quit their routines
                     self._client_info.set_connection_state(False)
             else:
+                msg_dict = JIMMessage(JIMMsgType.UNDEFINED_TYPE, 'urf-8', msg_bytes).deserialize()
                 self._input_buffer_queue.put(msg_dict)
 
             time.sleep(self._wait_time)

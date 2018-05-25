@@ -7,11 +7,10 @@ from sqlalchemy import Column, Integer, String, DateTime, ForeignKey
 from sqlalchemy.ext.declarative import declarative_base
 from sqlalchemy.orm import relationship
 
-from NCryptoServer.Utils.constants import *
+from NCryptoServer.utils.constants import *
 
 
 Base = declarative_base()
-print(DB_PATH)
 
 
 def get_current_max_id(table_name):
@@ -22,7 +21,7 @@ def get_current_max_id(table_name):
     @param table_name: table name.
     @return: MAX id value.
     """
-    connection = sqlite3.connect(DB_PATH)
+    connection = sqlite3.connect(DATABASE_PATH)
     cursor = connection.cursor()
     cursor.execute('SELECT max(id) FROM {}'.format(table_name))
     return cursor.fetchone()[0]

@@ -3,8 +3,8 @@
 Главный файл серверной части приложения, который объединяет все функциональные
 модули в один.
 """
-from NCryptoServer.UI.ui_main_window import UiMainWindow
-from NCryptoServer.Transmitter.server_connection_acceptor import ConnectionAcceptor
+from NCryptoServer.ui.ui_main_window import UiMainWindow
+from NCryptoServer.net.server_connection_acceptor import ConnectionAcceptor
 
 
 class MainWindow(UiMainWindow):

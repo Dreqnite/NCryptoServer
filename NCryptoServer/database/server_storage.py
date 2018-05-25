@@ -6,7 +6,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.orm import sessionmaker, scoped_session
 
-from NCryptoServer.Database.db_model import *
+from NCryptoServer.database.db_model import *
 
 
 class SQLErrorNotFound(Exception):
@@ -57,7 +57,7 @@ class ServerRepository:
         """
         Constructor.
         """
-        self._db_engine = create_engine('sqlite:///{}'.format(DB_PATH))
+        self._db_engine = create_engine('sqlite:///{}'.format(DATABASE_PATH))
         Base.metadata.create_all(self._db_engine)
 
         # Sessions in the SQLAlchemy are ThreadLocal:

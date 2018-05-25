@@ -3,8 +3,7 @@
 Модуль, который предназначен для определения классов и функций, связанных с их
 основной информацией.
 """
-import datetime
-from NCryptoServer.Transmitter.client_connection import ClientHandler
+from NCryptoServer.net.client_connection import ClientHandler
 
 
 class ClientManager:

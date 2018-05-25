@@ -25,25 +25,25 @@ if %mode% equ "-help" (
 )
 
 @rem Checks if database folder exists
-if not exist db (
+if not exist NCryptoServer\db (
 	@echo Creating database folder...
-	mkdir db
+	mkdir NCryptoServer\db
 )
 
 @rem Checks if folder already contains needed database
-if exist db\NCryptoDatabase.db (
+if exist NCryptoServer\db\NCryptoDatabase.db (
 	@echo Error! File NCryptoDatabase.db already exists!
 	goto END
 )
 
 @rem Builds empty database
 @echo Creating NCrypto database...
-sqlite3.exe db\NCryptoDatabase.db ".read create-db.sql"
+sqlite3.exe NCryptoServer\db\NCryptoDatabase.db ".read create-db.sql"
 
 @rem Fills database with a testing data
 if %mode% equ "-fill" (
 	@echo Filling NCrypto database with a testing data...
-	sqlite3.exe db\NCryptoDatabase.db ".read fill-db.sql"
+	sqlite3.exe NCryptoServer\db\NCryptoDatabase.db ".read fill-db.sql"
 )
 
 if %ERRORLEVEL% equ 0 (

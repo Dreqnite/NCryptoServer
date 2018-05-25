@@ -9,7 +9,7 @@ from PyQt5.QtWidgets import QApplication
 
 from NCryptoServer.main_window import MainWindow
 from NCryptoServer.server_instance_holder import server_holder
-from NCryptoServer.Database.server_storage import ServerRepository
+from NCryptoServer.database.server_storage import ServerRepository
 from NCryptoServer.client_manager import ClientManager
 
 

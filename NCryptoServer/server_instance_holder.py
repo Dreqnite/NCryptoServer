@@ -12,6 +12,6 @@
 Способы обойти данную ошибку имеются, однако они довольно сложные, поэтому было
 решено использовать данный подход для достижения целей.
 """
-from NCryptoTools.Tools.instances_holder import Holder
+from NCryptoTools.tools.instances_holder import Holder
 
 server_holder = Holder()
