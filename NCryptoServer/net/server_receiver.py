@@ -51,7 +51,6 @@ class Receiver(Thread):
             try:
                 msg_bytes = self._socket.recv(1024)
             except OSError:
-                # If user has exited with a TO_SERVER_QUIT message - he quited safely
                 if self._client_info.is_safe_quit() is False:
                     login = self._client_info.get_login()
                     ip = self._client_info.get_ip()
@@ -69,7 +68,5 @@ class Receiver(Thread):
                     # Triggers threads to quit their routines
                     self._client_info.set_connection_state(False)
             else:
-                msg_dict = JIMMessage(JIMMsgType.UNDEFINED_TYPE, 'urf-8', msg_bytes).deserialize()
-                self._input_buffer_queue.put(msg_dict)
-
+                self._input_buffer_queue.put(msg_bytes)
             time.sleep(self._wait_time)

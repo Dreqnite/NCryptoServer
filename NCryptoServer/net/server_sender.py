@@ -33,29 +33,27 @@ class Sender(Thread):
         self._output_buffer_queue = Queue(buffer_size)
         self._client_manager = server_holder.get_instance('ClientManager')
 
-    def add_msg_to_queue(self, recipient_login, jim_msg):
+    def add_msg_to_queue(self, recipient_login, msg_bytes):
         """
-        Кладёт новое сообщение в очередь.
-        @param recipient_login: логин получателя.
-        @param jim_msg: JSON-объект (сообщение).
-        @return: -
+        Adds new message to the outgoing queue.
+        @param recipient_login: login of recipient who receives bytes.
+        @param msg_bytes: serialized JSON message (bytes).
+        @return: None.
         """
-        self._output_buffer_queue.put((recipient_login, jim_msg))
+        self._output_buffer_queue.put((recipient_login, msg_bytes))
 
     def run(self):
         """
-        Запускает процесс выполнения потока.
-        @return: -
+        Runs Sender thread.
+        @return: None.
         """
         while self._client_info.is_connected():
             if self._output_buffer_queue.qsize() > 0:
-                (recipient_login, msg_dict) = self._output_buffer_queue.get()
-
-                # Если информация о клиенте отсутствует на сервере - то пропускаем его
+                (recipient_login, msg_bytes) = self._output_buffer_queue.get()
                 client = self._client_manager.find_client('login', recipient_login)
                 if client:
                     try:
-                        self._socket.recv(1024)
+                        client.get_socket().send(msg_bytes)
                     except OSError:
                         self._handle_sending_failure(client.get_login(), 'Client {} ({}) has timed out.'.
                                                      format(client.get_login(), client.get_ip()))
